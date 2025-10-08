@@ -1,0 +1,531 @@
+#!/usr/bin/env python3
+"""
+CLOUD AI BUG BOUNTY SCANNER - TOP 5 VULNERABILITIES
+1. SQL Injection
+2. Cross-Site Scripting (XSS)
+3. CSRF Protection
+4. Security Misconfigurations
+5. Broken Authentication
+"""
+
+import google.generativeai as genai
+import requests
+import sys
+import os
+import time
+import re
+import json
+from datetime import datetime
+from urllib.parse import urljoin, urlparse
+
+class Top5AIScanner:
+    def __init__(self, target_url):
+        self.target_url = target_url
+        self.domain = urlparse(target_url).netloc
+        self.session = requests.Session()
+        self.session.verify = False  # Ignore SSL warnings for testing
+        self.results = {}
+        
+        # Setup AI
+        self.setup_ai()
+        
+        print("CLOUD AI BUG BOUNTY SCANNER")
+        print("===============================")
+        print(f"Target: {self.target_url}")
+        print(f"AI: Google Gemini Pro")
+        print(f"Started: {datetime.now()}")
+        print("\nSCANNING TOP 5 VULNERABILITIES:")
+        print("1. SQL Injection")
+        print("2. Cross-Site Scripting (XSS)")
+        print("3. CSRF Protection")
+        print("4. Security Misconfigurations")
+        print("5. Broken Authentication")
+        print("="*50)
+    
+    def setup_ai(self):
+        """Setup Google Gemini AI"""
+        api_key = os.getenv('GEMINI_API_KEY')
+        if not api_key:
+            print("ERROR: GEMINI_API_KEY environment variable not set!")
+            print("Get free key from: https://aistudio.google.com/app/apikey")
+            print("Then run: export GEMINI_API_KEY='your_key_here'")
+            sys.exit(1)
+        
+        genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel('gemini-pro')
+        print("AI Model: Google Gemini Pro configured")
+    
+    def ask_ai(self, prompt):
+        """Ask AI for analysis"""
+        try:
+            response = self.model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            return f"AI Error: {str(e)}"
+    
+    def test_sql_injection(self):
+        """1. Test for SQL Injection vulnerabilities"""
+        print("\n[1/5] TESTING SQL INJECTION...")
+        
+        findings = []
+        test_payloads = [
+            "'", 
+            "1' OR '1'='1",
+            "1; DROP TABLE users--",
+            "1' UNION SELECT 1,2,3--"
+        ]
+        
+        # Test URL parameters
+        try:
+            response = self.session.get(self.target_url, timeout=10)
+            
+            # Find all links and forms
+            links = re.findall(r'href=[\"\'](.*?)[\"\']', response.text)
+            forms = re.findall(r'<form.*?>(.*?)</form>', response.text, re.DOTALL)
+            
+            # Test each link with parameters
+            for link in links[:5]:  # Test first 5 links
+                full_url = urljoin(self.target_url, link)
+                if '?' in full_url:
+                    for payload in test_payloads:
+                        try:
+                            test_url = full_url + payload
+                            resp = self.session.get(test_url, timeout=5)
+                            
+                            # Check for SQL errors
+                            sql_errors = [
+                                "sql syntax", "mysql", "ora-", "postgresql",
+                                "microsoft odbc", "odbc driver", "sqlserver",
+                                "warning: mysql", "unclosed quotation mark"
+                            ]
+                            
+                            if any(error in resp.text.lower() for error in sql_errors):
+                                findings.append(f"SQLi potential in {full_url} with payload: {payload}")
+                                break
+                        except:
+                            pass
+        except Exception as e:
+            findings.append(f"SQLi test error: {str(e)}")
+        
+        # AI Analysis
+        ai_prompt = f"""
+        SQL Injection Test Results for {self.target_url}:
+        
+        Findings: {findings if findings else "No SQL Injection vulnerabilities detected"}
+        
+        Please analyze:
+        1. Severity of findings
+        2. Potential impact
+        3. Recommended next steps for exploitation
+        4. Remediation advice
+        """
+        
+        ai_analysis = self.ask_ai(ai_prompt)
+        
+        return {
+            "vulnerability": "SQL Injection",
+            "findings": findings,
+            "ai_analysis": ai_analysis,
+            "severity": "CRITICAL" if findings else "LOW"
+        }
+    
+    def test_xss(self):
+        """2. Test for Cross-Site Scripting vulnerabilities"""
+        print("[2/5] TESTING XSS...")
+        
+        findings = []
+        xss_payloads = [
+            "<script>alert('XSS')</script>",
+            "<img src=x onerror=alert('XSS')>",
+            "\"><script>alert('XSS')</script>",
+            "javascript:alert('XSS')"
+        ]
+        
+        try:
+            response = self.session.get(self.target_url, timeout=10)
+            
+            # Find input fields and forms
+            inputs = re.findall(r'<input[^>]*>', response.text)
+            forms = re.findall(r'<form.*?>(.*?)</form>', response.text, re.DOTALL)
+            
+            # Test search functionality if available
+            search_indicators = ["search", "q", "query", "s"]
+            for indicator in search_indicators:
+                for payload in xss_payloads:
+                    try:
+                        test_data = {indicator: payload}
+                        resp = self.session.post(self.target_url, data=test_data, timeout=5)
+                        
+                        # Check if payload is reflected
+                        if payload in resp.text:
+                            findings.append(f"XSS potential with payload: {payload} in parameter: {indicator}")
+                            break
+                    except:
+                        pass
+        except Exception as e:
+            findings.append(f"XSS test error: {str(e)}")
+        
+        # AI Analysis
+        ai_prompt = f"""
+        XSS Test Results for {self.target_url}:
+        
+        Findings: {findings if findings else "No XSS vulnerabilities detected"}
+        
+        Please analyze:
+        1. Type of XSS (Reflected/Stored/DOM)
+        2. Severity and impact
+        3. Exploitation techniques
+        4. Remediation steps
+        """
+        
+        ai_analysis = self.ask_ai(ai_prompt)
+        
+        return {
+            "vulnerability": "Cross-Site Scripting (XSS)",
+            "findings": findings,
+            "ai_analysis": ai_analysis,
+            "severity": "HIGH" if findings else "LOW"
+        }
+    
+    def test_csrf(self):
+        """3. Test for CSRF protection"""
+        print("[3/5] TESTING CSRF PROTECTION...")
+        
+        findings = []
+        
+        try:
+            response = self.session.get(self.target_url, timeout=10)
+            
+            # Check for forms without CSRF tokens
+            forms = re.findall(r'<form.*?>(.*?)</form>', response.text, re.DOTALL)
+            
+            for i, form in enumerate(forms):
+                csrf_indicators = [
+                    "csrf", "csrf_token", "csrfmiddlewaretoken", 
+                    "authenticity_token", "_token", "nonce"
+                ]
+                
+                has_csrf = any(indicator in form.lower() for indicator in csrf_indicators)
+                
+                if not has_csrf:
+                    form_action = re.search(r'action=[\"\'](.*?)[\"\']', form)
+                    action = form_action.group(1) if form_action else "unknown"
+                    findings.append(f"Form {i+1} (action: {action}) missing CSRF protection")
+        except Exception as e:
+            findings.append(f"CSRF test error: {str(e)}")
+        
+        # AI Analysis
+        ai_prompt = f"""
+        CSRF Protection Test Results for {self.target_url}:
+        
+        Findings: {findings if findings else "All forms appear to have CSRF protection"}
+        
+        Please analyze:
+        1. Risk level of missing CSRF protection
+        2. Potential attack scenarios
+        3. Impact assessment
+        4. Implementation recommendations
+        """
+        
+        ai_analysis = self.ask_ai(ai_prompt)
+        
+        return {
+            "vulnerability": "CSRF Protection",
+            "findings": findings,
+            "ai_analysis": ai_analysis,
+            "severity": "MEDIUM" if findings else "LOW"
+        }
+    
+    def test_security_misconfig(self):
+        """4. Test for security misconfigurations"""
+        print("[4/5] TESTING SECURITY MISCONFIGURATIONS...")
+        
+        findings = []
+        
+        try:
+            response = self.session.get(self.target_url, timeout=10)
+            
+            # Check security headers
+            security_headers = {
+                "Content-Security-Policy": "Missing Content Security Policy",
+                "X-Frame-Options": "Missing clickjacking protection",
+                "X-Content-Type-Options": "Missing X-Content-Type-Options",
+                "Strict-Transport-Security": "Missing HSTS header",
+                "X-XSS-Protection": "Missing XSS protection header"
+            }
+            
+            for header, message in security_headers.items():
+                if header not in response.headers:
+                    findings.append(f"Security Header: {message}")
+            
+            # Check for sensitive files
+            sensitive_files = [
+                "/.env", "/.git/config", "/backup.zip", 
+                "/phpinfo.php", "/test.php", "/admin"
+            ]
+            
+            for file in sensitive_files:
+                try:
+                    test_url = urljoin(self.target_url, file)
+                    resp = self.session.get(test_url, timeout=5)
+                    if resp.status_code == 200:
+                        findings.append(f"Exposed sensitive file: {file}")
+                except:
+                    pass
+                    
+        except Exception as e:
+            findings.append(f"Security misconfig test error: {str(e)}")
+        
+        # AI Analysis
+        ai_prompt = f"""
+        Security Misconfiguration Test Results for {self.target_url}:
+        
+        Findings: {findings if findings else "No major security misconfigurations detected"}
+        
+        Please analyze:
+        1. Risk assessment of each finding
+        2. Potential exploitation methods
+        3. Business impact
+        4. Configuration recommendations
+        """
+        
+        ai_analysis = self.ask_ai(ai_prompt)
+        
+        return {
+            "vulnerability": "Security Misconfigurations",
+            "findings": findings,
+            "ai_analysis": ai_analysis,
+            "severity": "MEDIUM" if findings else "LOW"
+        }
+    
+    def test_broken_auth(self):
+        """5. Test for broken authentication"""
+        print("[5/5] TESTING BROKEN AUTHENTICATION...")
+        
+        findings = []
+        
+        try:
+            response = self.session.get(self.target_url, timeout=10)
+            
+            # Look for login forms
+            login_indicators = [
+                "password", "login", "signin", "username", "email"
+            ]
+            
+            has_login_form = any(indicator in response.text.lower() for indicator in login_indicators)
+            
+            if has_login_form:
+                findings.append("Login form detected - manual testing recommended")
+                
+                # Check for default credentials page
+                default_cred_pages = ["/admin", "/login", "/wp-admin", "/administrator"]
+                for page in default_cred_pages:
+                    try:
+                        test_url = urljoin(self.target_url, page)
+                        resp = self.session.get(test_url, timeout=5)
+                        if resp.status_code == 200:
+                            findings.append(f"Admin/login page accessible: {page}")
+                    except:
+                        pass
+        except Exception as e:
+            findings.append(f"Broken auth test error: {str(e)}")
+        
+        # AI Analysis
+        ai_prompt = f"""
+        Broken Authentication Test Results for {self.target_url}:
+        
+        Findings: {findings if findings else "No obvious authentication issues detected"}
+        
+        Please analyze:
+        1. Authentication mechanism risks
+        2. Potential attack vectors
+        3. Impact assessment
+        4. Security hardening recommendations
+        """
+        
+        ai_analysis = self.ask_ai(ai_prompt)
+        
+        return {
+            "vulnerability": "Broken Authentication",
+            "findings": findings,
+            "ai_analysis": ai_analysis,
+            "severity": "HIGH" if "Admin/login page accessible" in str(findings) else "MEDIUM" if findings else "LOW"
+        }
+    
+    def run_all_scans(self):
+        """Run all vulnerability scans"""
+        print("STARTING COMPREHENSIVE SCAN...")
+        start_time = time.time()
+        
+        # Run all vulnerability tests
+        tests = [
+            self.test_sql_injection,
+            self.test_xss, 
+            self.test_csrf,
+            self.test_security_misconfig,
+            self.test_broken_auth
+        ]
+        
+        results = []
+        for test in tests:
+            try:
+                result = test()
+                results.append(result)
+                time.sleep(2)  # Rate limiting
+            except Exception as e:
+                print(f"Test failed: {e}")
+        
+        scan_time = time.time() - start_time
+        
+        # Generate final AI report
+        final_report = self.generate_final_report(results, scan_time)
+        
+        return results, final_report
+    
+    def generate_final_report(self, results, scan_time):
+        """Generate comprehensive AI report"""
+        print("\nGENERATING AI ANALYSIS REPORT...")
+        
+        # Prepare data for AI
+        summary = ""
+        for result in results:
+            summary += f"\n{result['vulnerability']}:\n"
+            summary += f"  Severity: {result['severity']}\n"
+            summary += f"  Findings: {result['findings']}\n"
+            summary += f"  AI Analysis: {result['ai_analysis'][:200]}...\n"
+        
+        ai_prompt = f"""
+        COMPREHENSIVE BUG BOUNTY REPORT - {self.target_url}
+        
+        SCAN SUMMARY:
+        - Scan Duration: {scan_time:.2f} seconds
+        - Target: {self.target_url}
+        - Date: {datetime.now()}
+        
+        VULNERABILITY RESULTS:
+        {summary}
+        
+        Please provide a professional bug bounty report including:
+        
+        1. EXECUTIVE SUMMARY
+           - Overall risk assessment
+           - Key findings summary
+        
+        2. DETAILED FINDINGS
+           - Vulnerability breakdown
+           - Risk levels
+           - Evidence
+        
+        3. IMPACT ANALYSIS
+           - Business impact
+           - Technical impact
+        
+        4. RECOMMENDATIONS
+           - Priority fixes
+           - Remediation timeline
+           - Security improvements
+        
+        5. CONCLUSION
+           - Final assessment
+           - Next steps
+        
+        Format for submission to bug bounty programs.
+        """
+        
+        final_report = self.ask_ai(ai_prompt)
+        return final_report
+    
+    def save_report(self, results, final_report, scan_time):
+        """Save results to file"""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"bugbounty_report_{self.domain}_{timestamp}.txt"
+        
+        with open(filename, 'w') as f:
+            f.write("CLOUD AI BUG BOUNTY REPORT\n")
+            f.write("=" * 50 + "\n\n")
+            f.write(f"Target: {self.target_url}\n")
+            f.write(f"Domain: {self.domain}\n")
+            f.write(f"Scan Date: {datetime.now()}\n")
+            f.write(f"Scan Duration: {scan_time:.2f} seconds\n")
+            f.write(f"AI Model: Google Gemini Pro\n\n")
+            
+            f.write("EXECUTIVE SUMMARY\n")
+            f.write("=" * 30 + "\n")
+            
+            # Count vulnerabilities by severity
+            severity_count = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+            for result in results:
+                severity_count[result['severity']] += 1
+            
+            f.write(f"Critical: {severity_count['CRITICAL']}\n")
+            f.write(f"High: {severity_count['HIGH']}\n")
+            f.write(f"Medium: {severity_count['MEDIUM']}\n")
+            f.write(f"Low: {severity_count['LOW']}\n\n")
+            
+            f.write("DETAILED FINDINGS\n")
+            f.write("=" * 30 + "\n")
+            
+            for result in results:
+                f.write(f"\n{result['vulnerability']} ({result['severity']})\n")
+                f.write("-" * 40 + "\n")
+                f.write(f"Findings: {result['findings']}\n")
+                f.write(f"AI Analysis: {result['ai_analysis']}\n\n")
+            
+            f.write("COMPREHENSIVE AI REPORT\n")
+            f.write("=" * 30 + "\n")
+            f.write(final_report + "\n")
+        
+        return filename
+
+def main():
+    if len(sys.argv) != 2:
+        print("Usage: python3 top5_scanner.py <url>")
+        print("Examples:")
+        print("  python3 top5_scanner.py https://example.com")
+        print("  python3 top5_scanner.py testphp.vulnweb.com")
+        sys.exit(1)
+    
+    target = sys.argv[1]
+    if not target.startswith(('http://', 'https://')):
+        target = 'https://' + target
+    
+    print("CLOUD AI BUG BOUNTY SCANNER")
+    print("===============================")
+    
+    # Check API key
+    if not os.getenv('GEMINI_API_KEY'):
+        print("Please set GEMINI_API_KEY environment variable first!")
+        print("Get free key: https://aistudio.google.com/app/apikey")
+        print("Then: export GEMINI_API_KEY='your_key_here'")
+        sys.exit(1)
+    
+    # Run scanner
+    scanner = Top5AIScanner(target)
+    results, final_report = scanner.run_all_scans()
+    filename = scanner.save_report(results, final_report, 0)
+    
+    # Display summary
+    print("\n" + "="*60)
+    print("SCAN COMPLETE!")
+    print("="*60)
+    
+    # Count findings
+    critical = sum(1 for r in results if r['severity'] == 'CRITICAL')
+    high = sum(1 for r in results if r['severity'] == 'HIGH')
+    medium = sum(1 for r in results if r['severity'] == 'MEDIUM')
+    
+    print(f"VULNERABILITY SUMMARY:")
+    print(f"Critical: {critical}")
+    print(f"High: {high}") 
+    print(f"Medium: {medium}")
+    print(f"Report: {filename}")
+    print("="*60)
+    
+    # Show AI report preview
+    print("\nAI REPORT PREVIEW:")
+    print("-" * 40)
+    print(final_report[:500] + "..." if len(final_report) > 500 else final_report)
+    print("-" * 40)
+
+if __name__ == "__main__":
+    main()
