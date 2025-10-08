@@ -1,0 +1,42 @@
+#!/bin/bash
+echo "CLOUD AI BUG BOUNTY SCANNER"
+echo "==============================="
+
+# Activate virtual environment
+source ai-env/bin/activate
+
+# Check for API key
+if [ -z "$GEMINI_API_KEY" ]; then
+    echo "ERROR: GEMINI_API_KEY not set!"
+    echo ""
+    echo "GET YOUR FREE API KEY:"
+    echo "1. Visit: https://aistudio.google.com/app/apikey"
+    echo "2. Click 'Create API Key'" 
+    echo "3. Copy your key"
+    echo "4. Run: export GEMINI_API_KEY='your_key_here'"
+    echo ""
+    exit 1
+fi
+
+if [ -z "$1" ]; then
+    echo "Usage: ./run_scanner.sh <website-url>"
+    echo ""
+    echo "Examples:"
+    echo "  ./run_scanner.sh https://example.com"
+    echo "  ./run_scanner.sh testphp.vulnweb.com"
+    echo "  ./run_scanner.sh google.com"
+    echo ""
+    exit 1
+fi
+
+URL=$1
+
+echo "Target: $URL"
+echo "AI: Google Gemini Pro"
+echo "Start: $(date)"
+echo ""
+
+python3 top5_scanner.py "$URL"
+
+echo ""
+echo "Scan completed!"
