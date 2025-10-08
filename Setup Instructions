@@ -1,0 +1,8 @@
+# 1. Set your API key (get from https://aistudio.google.com/app/apikey)
+export GEMINI_API_KEY="your_actual_key_here"
+
+# 2. Make it permanent (add to ~/.bashrc)
+echo 'export GEMINI_API_KEY="your_actual_key_here"' >> ~/.bashrc
+
+# 3. Run the scanner!
+./run_scanner.sh testphp.vulnweb.com
