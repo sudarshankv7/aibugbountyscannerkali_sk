@@ -1,0 +1,7 @@
+# Create fresh project directory
+mkdir ~/cloud-ai-bugbounty
+cd ~/cloud-ai-bugbounty
+
+# Create virtual environment
+python3 -m venv ai-env
+source ai-env/bin/activate
